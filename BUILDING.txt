@@ -1,0 +1,48 @@
+In order to build QPG you will need to have Qt4 developer packages installed.
+
+Building QPG is a four step process:
+
+1.
+	Run qmake:
+		
+		qmake
+		
+	Make sure to run the qmake version coming with qt4. The name of the binary
+	may differ on some platforms. (qmake-qt4 on Ubuntu as an example)
+	
+2.
+	Start the build with
+		
+		make
+		
+3.
+	Now you have an rudimentary QPG that is able to generate a parser for its
+	own grammer. To do so run
+	
+		./qpg -b1
+		
+	This will trigger QPG to generate the files Parser_gen.h, Parser_gen.cpp, 
+	REParser.h and REParser_gen.cpp. 
+	
+4.
+	Now you can run
+	
+		qmake
+		
+	and
+	
+		make
+		
+	again, which should produce a working generator.
+	
+
+There is no "make install" yet. So you will have to install manually.
+
+There is not much documentation availabe right now (2010-09-16).
+See the doc/README.txt for what hopefully will become useful docs.
+Running qpg without any arguments will print a short usage message.
+Also, there are the files re.qpg and qpg.qpg in the src directory, which
+contain the grammers for the regular expressions parser and the main parser
+itself. They might serve as a usage example until real documentation is
+available. (Hopefully soon!)
+

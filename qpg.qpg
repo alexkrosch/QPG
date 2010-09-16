@@ -1,0 +1,304 @@
+/****************************************************************************
+** 
+** Copyright 2010 Alexander Krosch
+** 
+** This file is part of QPG - the Q Parser Generator.
+** 
+** QPG is free software: you can redistribute it and/or modify
+** it under the terms of the GNU General Public License as published by
+** the Free Software Foundation, either version 3 of the License, or
+** (at your option) any later version.
+** 
+** QPG is distributed in the hope that it will be useful,
+** but WITHOUT ANY WARRANTY; without even the implied warranty of
+** MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+** GNU General Public License for more details.
+** 
+** You should have received a copy of the GNU General Public License
+** along with QPG.  If not, see <http://www.gnu.org/licenses/>.
+** 
+****************************************************************************/
+
+#include "Parser_inc.h"
+#include "Parser.h"
+
+#option TokenInfoType TokenInfo
+
+WS:=
+	/[ \n\r\t]/;
+HEX:=
+	/[A-Fa-f0-9]/;
+ALL:=
+	/([ -\uFFFF]-\\)|\\(0([0-7]{3})?|1[0-7]{1,2}|[2-7][0-7]?|[ -\177]|[ux]{HEX}{HEX}{HEX}{HEX})/;
+IDCHAR:=
+	/[_a-zA-Z]/;
+DIGIT:=
+	/[0-9]/;
+STRINGCHAR:=
+	/{ALL}-\"/;
+
+String		STRING ("?");
+String		IDENTIFIER ("?");
+int			INTEGER (0);
+String		SIGNED ("0");
+String		FLOAT ("0.0");
+String		REGEXP ("/\\?/");
+
+";";
+/[ \t]/												dump;
+/\n\r?/												dump;
+/"//"({ALL}|\t)*\n\r?/								dump;
+/"/*"\/*(((({ALL}|{WS})-[*/])+\/*)|\*+)*"*/"/		dump;
+"#include";
+"#option";
+"#enable";
+"<";
+">";
+"*";
+",";
+".";
+":";
+"|";
+"(";
+")";
+":=";
+"::";
+"$";
+"const";
+"unsigned";
+"char";
+"short";
+"int";
+"long";
+"float";
+"double";
+"bool";
+"void";
+"true";
+"false";
+"\"\"";
+/\"{STRINGCHAR}+\"/													appendString;
+/{IDCHAR}({IDCHAR}|{DIGIT})*/										appendIdentifier;
+/[1-9]{DIGIT}*/														appendInteger;
+/([+\-][1-9]{DIGIT}*)|0/											appendSigned;
+/\-?(({DIGIT}+(\.{DIGIT}*)?)|(\.{DIGIT}+))([Ee][\-+]{DIGIT}+)?/		appendFloat;
+/"/"(({ALL}-["/\[])|(\"{STRINGCHAR}+\")|(\[({ALL}-\])+\]))+"/"/		appendRegExp;
+
+
+goal:
+	(includes_opt options_opt statements);
+	
+includes_opt:
+	(includes)|
+	();
+	
+includes:
+	(includes include)|
+	(include);
+	
+include:
+	("#include" STRING):include(2);
+	
+options_opt:
+	(options)|
+	();
+	
+options:
+	(options option)|
+	(option);
+	
+option:
+	("#option" IDENTIFIER nsname):setOption(2, 3, $1)|
+	("#enable" IDENTIFIER):setOption(2, "", $1);
+	
+String nsname:
+	(nsname "::" IDENTIFIER):nsname(1, 3)|
+	(IDENTIFIER):1;
+	
+statements:
+	(statements statement)|
+	(statement);
+
+statement:
+	(definition)|
+	(pattern)|
+	(terminaldef)|
+	(production);
+	
+definition:
+	(IDENTIFIER ":=" regexp ";"):define(1, 3, $1, $3)|
+	("." ":=" REGEXP ";"):define(1, 3);
+	
+pattern:
+	(startconditions_opt REGEXP identifier ";"):addPattern(1, 2, 3, $2)|
+	(startconditions_opt STRING identifier ";"):addPattern(1, 2, 3, $2)|
+	(startconditions_opt REGEXP ";"):addPattern(1, 2, "", $2)|
+	(startconditions_opt REGEXP "(" literal ")" ";"):addAnonPattern(1, 2, 4, $2)|
+	(startconditions_opt STRING ";"):addAnonPattern(1, 2, 2, $2);
+	
+Cont<String>::Set startconditions_opt:
+	("<" startconditions ">"):2|
+	();
+	
+Cont<String>::Set startconditions:
+	(startconditions IDENTIFIER):1 insert(1, 2)|
+	(IDENTIFIER):createSet(1);
+	
+terminaldef:
+	(IDENTIFIER ";"):defineTerminal(1, "", "", $1)|
+	(typename IDENTIFIER ";"):defineTerminal(2, 1, "", $2)|
+	(typename IDENTIFIER "(" literal ")" ";"):defineTerminal(2, 1, 4, $2);
+	
+production:
+	(head ":" righthands ";");
+	
+head:
+	(IDENTIFIER):declareProduction(1, "", $1)|
+	(typename IDENTIFIER):declareProduction(2, 1, $2);
+	
+righthands:
+	(righthands "|" righthand)|
+	(righthand);
+	
+righthand:
+	("(" shifts_opt ")" action_opt):addRightHandSide(2, 4, $2);
+	
+Cont<Shift>::List shifts_opt:
+	(shifts):1|
+	();
+	
+Cont<Shift>::List shifts:
+	(shifts shift):1 append(1, 2)|
+	(shift):createList(1);
+	
+Shift shift:
+	(symbol shift_action_opt):createShift(1, 2);
+	
+Action shift_action_opt:
+	(":" call):2|
+	();
+	
+String symbol:
+	(IDENTIFIER):1|
+	(regexp):1 lookupAnonPattern(1, $1);
+	
+Action action_opt:
+	(":" action):2|
+	();
+	
+Action action:
+	(call):1|
+	("(" args_opt ")" ):createAction(2)|
+	(INTEGER call_opt):createAction(1, 2);
+	
+Action call_opt:
+	(call):1|
+	();
+	
+Action call:
+	(IDENTIFIER "(" args_opt ")" ):createAction(1, 3);
+
+Cont<Arg>::List args_opt:
+	(args):1|
+	();
+	
+Cont<Arg>::List args:
+	(args "," arg):1 append(1, 3)|
+	(arg):createList(1);
+	
+Arg arg:
+	(literal):createArg(1)|
+	(INTEGER):createArg(1)|
+	("$" INTEGER):createArgMeta(2);
+	
+String literal:
+	(SIGNED):1|
+	(FLOAT):1|
+	(nsname):nameLiteral(1)|
+	(STRING):1|
+	("\"\""):1|
+	("true"):1|
+	("false"):1;
+	
+String typename:
+	(mutable_pointer_type):1|
+	("void"):1;
+
+bool const_opt:
+	("const"):(true)|
+	():(false);
+
+String mutable_pointer_type:
+	(pointer_type "*"):pointerType(1, false)|
+	(basic_type):1;
+
+String pointer_type:
+	(pointer_type "*" const_opt):pointerType(1, 3)|
+	(const_type):1;
+	
+String basic_type:
+	(template_type "(" "*" ")" "(" type_args_opt ")" ):functionType(1, 6)|
+	(template_type function_type "(" type_args_opt ")" ):functionType(1, 2, 4)|
+	(template_type):1|
+	("unsigned" int_type):unsignedType(2)|
+	(int_type):1|
+	("unsigned"):1|
+	("float"):1|
+	("double"):1|
+	("long" "double"):("long double")|
+	("bool"):1;
+
+String template_type:
+	(template_type "::" IDENTIFIER template_args_opt):templateType(1, 3, 4)|
+	(IDENTIFIER template_args_opt):templateType(1, 2);
+	
+String int_type:
+	("char"):1|
+	("short"):1|
+	("int"):1|
+	("long"):1|
+	("long" "long"):("long long");
+	
+String function_type:
+	("(" "*" "(" type_args_opt ")" ")"):functionType_rec(4)|
+	("(" "*" function_type "(" type_args_opt ")" ")"):functionType_rec(3, 5);
+	
+Cont<String>::List template_args_opt:
+	("<" type_args ">"):2|
+	();
+
+Cont<String>::List type_args_opt:
+	(type_args):1|
+	();
+	
+Cont<String>::List type_args:
+	(type_args "," pointer_type):1 append(1, 3)|
+	(pointer_type):createList(1);
+
+String const_type:
+	("const" basic_type):constType(2)|
+	(basic_type "const"):constType(1)|
+	(basic_type):1;
+	
+String regexp:
+	(STRING):1|
+	(REGEXP):1;
+
+/*String identifier_opt:
+	(identifier):1|
+	();*/
+	
+String identifier:
+	(IDENTIFIER):1|
+	("const"):1|
+	("unsigned"):1|
+	("char"):1|
+	("short"):1|
+	("int"):1|
+	("float"):1|
+	("double"):1|
+	("bool"):1|
+	("void"):1|
+	("true"):1|
+	("false"):1;
+	

@@ -1,0 +1,118 @@
+/****************************************************************************
+** 
+** Copyright 2010 Alexander Krosch
+** 
+** This file is part of QPG - the Q Parser Generator.
+** 
+** QPG is free software: you can redistribute it and/or modify
+** it under the terms of the GNU General Public License as published by
+** the Free Software Foundation, either version 3 of the License, or
+** (at your option) any later version.
+** 
+** QPG is distributed in the hope that it will be useful,
+** but WITHOUT ANY WARRANTY; without even the implied warranty of
+** MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+** GNU General Public License for more details.
+** 
+** You should have received a copy of the GNU General Public License
+** along with QPG.  If not, see <http://www.gnu.org/licenses/>.
+** 
+****************************************************************************/
+
+#include"REParser.h"
+
+#option class REParser
+
+HEX:=
+	/[A-Fa-f0-9]/;
+ALL:=
+	/([ -\uFFFF]-\\)|\\(0([0-7]{3})?|1[0-7]{1,2}|[2-7][0-7]?|[ -\177]|[ux]{HEX}{HEX}{HEX}{HEX})/;
+IDCHAR:=
+	/[_a-zA-Z]/;
+DIGIT:=
+	/[0-9]/;
+STRINGCHAR:=
+	/{ALL}-\"/;
+	
+
+"|";
+"*";
+"+";
+"?";
+"(";
+")";
+<cc INITIAL>"-";
+".";
+"\\d";
+"\\D";
+"\\s";
+"\\S";
+"\\w";
+"\\W";
+/\[|\[^/					beginCharacterClass;
+/\"{STRINGCHAR}+\"/			pushString;
+/{ALL}-["{}]/				pushCharacter;
+/\{{IDCHAR}({IDCHAR}|{DIGIT})*\}/	pushIdentifier;
+/\{([1-9][0-9]*|[0-9]*,([1-9][0-9]*)?|,[1-9][0-9]*)\}/	appendQuantifier;
+<cc>/\]/				endCharacterClass;
+<cc>/{ALL}/				pushCharacter;
+
+int			CHARACTER (+32);
+String		IDENTIFIER ("?");
+String		STRING;
+bool		CCBEGIN;
+void		CCEND;
+Quantifier	QUANTIFIER;
+
+re:
+	(reunion):convert(1) ;
+	
+StatePair reunion:
+	(reunion "|" reconcat) : reunion(1, 3) |
+	(reunion "-" reconcat) : recomplement(1, 3) |
+	(reconcat):1;
+	
+StatePair reconcat:
+	(reconcat reclosure) : reconcat(1, 2) |
+	(reclosure):(1);
+	
+StatePair reclosure:
+	(repar "*") : reclosure(1) |
+	(repar "+") : repclosure(1) |
+	(repar "?") : reoptional(1) |
+	(repar QUANTIFIER): quantified(1, 2)|
+	(repar):1 ;
+	
+StatePair repar:
+	("(" reunion ")"):2 |
+	(reprimitive):1 ;
+	
+StatePair reprimitive:
+	(STRING) 	: restring(1) |
+	(CHARACTER) 	: rechar(1) |
+	(reclass):1 |
+	(IDENTIFIER) 	: reinsert(1) |
+	(".") : reinsert(1)|
+	(Predefined):reclass(1);
+
+CharClass Predefined:
+	("\\d"):(Digit)|
+	("\\D"):(NonDigit)|
+	("\\s"):(Whitespace)|
+	("\\S"):(NonWhitespace)|
+	("\\w"):(WordChar)|
+	("\\W"):(NonWordChar);
+	
+StatePair reclass:
+	(CCBEGIN cclist CCEND) : reclass(1, 2) ;
+	
+StatePair cclist:
+	(cclist ccprim) : reunion(1, 2) |
+	(ccprim) 	: 1 ;
+	
+StatePair ccprim: 
+	(CHARACTER "-" CHARACTER) : rerange(1, 3) |
+	(CHARACTER)		  : rechar(1) ;
+
+
+
